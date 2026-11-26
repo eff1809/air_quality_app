@@ -26,11 +26,12 @@ class _HomeScreenState extends State<HomeScreen> {
   final _storage = StorageService();
 
   Future<AirQuality>? _future;
+  List<String> _history = [];
 
   @override
   void initState() {
     super.initState();
-    _loadLastCity();
+    _loadInitial();
   }
 
   @override
@@ -39,12 +40,16 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  // Dipanggil saat aplikasi dibuka: muat kota terakhir dari penyimpanan lokal
-  Future<void> _loadLastCity() async {
+  // Dipanggil saat aplikasi dibuka: muat riwayat dan kota terakhir
+  Future<void> _loadInitial() async {
+    final history = await _storage.getHistory();
     final last = await _storage.getLastCity();
-    if (last == null || !mounted) return;
-    _controller.text = last;
-    _search(last);
+    if (!mounted) return;
+    setState(() => _history = history);
+    if (last != null) {
+      _controller.text = last;
+      _search(last);
+    }
   }
 
   void _search(String city) {
@@ -56,11 +61,19 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  // Simpan kota hanya jika pengambilan data berhasil
+  // Simpan hanya jika pengambilan data berhasil
   Future<AirQuality> _fetchAndSave(String city) async {
     final data = await _api.fetchByCity(city);
     await _storage.saveLastCity(city);
+    await _storage.addToHistory(city);
+    final history = await _storage.getHistory();
+    if (mounted) setState(() => _history = history);
     return data;
+  }
+
+  Future<void> _clearHistory() async {
+    await _storage.clearHistory();
+    if (mounted) setState(() => _history = []);
   }
 
   @override
@@ -76,7 +89,7 @@ class _HomeScreenState extends State<HomeScreen> {
               textInputAction: TextInputAction.search,
               onSubmitted: _search,
               decoration: InputDecoration(
-                hintText: 'Masukkan nama kota, mis. Makassar',
+                hintText: 'Masukkan nama kota, mis. Jakarta',
                 border: const OutlineInputBorder(),
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.search),
@@ -84,7 +97,40 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 24),
+            if (_history.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Riwayat pencarian',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  TextButton(
+                    onPressed: _clearHistory,
+                    child: const Text('Hapus'),
+                  ),
+                ],
+              ),
+              SizedBox(
+                width: double.infinity,
+                child: Wrap(
+                  spacing: 8,
+                  children: _history
+                      .map(
+                        (city) => ActionChip(
+                          label: Text(city),
+                          onPressed: () {
+                            _controller.text = city;
+                            _search(city);
+                          },
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+            ],
+            const SizedBox(height: 16),
             Expanded(child: _buildResult()),
           ],
         ),
